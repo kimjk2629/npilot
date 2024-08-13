@@ -19,7 +19,7 @@ from openpilot.common.params import Params
 from openpilot.common.conversions import Conversions as CV
 import time
 
-CAMERA_SPEED_FACTOR = 1.1
+CAMERA_SPEED_FACTOR = 1.05
 terminate_flag = threading.Event()
 
 class Port:
