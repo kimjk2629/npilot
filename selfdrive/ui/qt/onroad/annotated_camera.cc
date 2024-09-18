@@ -10,8 +10,9 @@
 #include "selfdrive/ui/qt/util.h"
 
 // Window that shows camera view and variety of info drawn on top
-AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget* parent) : last_update_params(0), fps_filter(UI_FREQ, 3, 1. / UI_FREQ), CameraWidget("camerad", type, true, parent) {
-  pm = std::make_unique<PubMaster, const std::initializer_list<const char *>>({"uiDebug"});
+AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget *parent)
+    : fps_filter(UI_FREQ, 3, 1. / UI_FREQ), CameraWidget("camerad", type, parent) {
+  pm = std::make_unique<PubMaster>(std::vector<const char*>{"uiDebug"});
 
   main_layout = new QVBoxLayout(this);
   main_layout->setMargin(UI_BORDER_SIZE);
@@ -70,37 +71,59 @@ void AnnotatedCameraWidget::initializeGL() {
 }
 
 void AnnotatedCameraWidget::updateState(const UIState &s) {
-  const SubMaster &sm = *(s.sm);
-
   experimental_btn->updateState(s);
-
-  const auto cs = sm["controlsState"].getControlsState();
-
   // update DM icons
-  auto dm_state = sm["driverMonitoringState"].getDriverMonitoringState();
-  dmActive = dm_state.getIsActiveMode();
-  rightHandDM = dm_state.getIsRHD();
-
-  hideBottomIcons = (cs.getAlertSize() != cereal::ControlsState::AlertSize::NONE);
-  dm_fade_state = std::clamp(dm_fade_state+0.2*(0.5-dmActive), 0.0, 1.0);
+  dmon.updateState(s);
 }
 
-void AnnotatedCameraWidget::updateFrameMat() {
-  CameraWidget::updateFrameMat();
-  UIState *s = uiState();
-  int w = width(), h = height();
+mat4 AnnotatedCameraWidget::calcFrameMatrix() {
+  // Project point at "infinity" to compute x and y offsets
+  // to ensure this ends up in the middle of the screen
+  // for narrow come and a little lower for wide cam.
+  // TODO: use proper perspective transform?
 
-  s->fb_w = w;
-  s->fb_h = h;
+  // Select intrinsic matrix and calibration based on camera type
+  auto *s = uiState();
+  bool wide_cam = active_stream_type == VISION_STREAM_WIDE_ROAD;
+  const auto &intrinsic_matrix = wide_cam ? ECAM_INTRINSIC_MATRIX : FCAM_INTRINSIC_MATRIX;
+  const auto &calibration = wide_cam ? s->scene.view_from_wide_calib : s->scene.view_from_calib;
+
+   // Compute the calibration transformation matrix
+  const auto calib_transform = intrinsic_matrix * calibration;
+
+  float zoom = wide_cam ? 2.0 : 1.1;
+  Eigen::Vector3f inf(1000., 0., 0.);
+  auto Kep = calib_transform * inf;
+
+  int w = width(), h = height();
+  float center_x = intrinsic_matrix(0, 2);
+  float center_y = intrinsic_matrix(1, 2);
+
+  float max_x_offset = center_x * zoom - w / 2 - 5;
+  float max_y_offset = center_y * zoom - h / 2 - 5;
+  float x_offset = std::clamp<float>((Kep.x() / Kep.z() - center_x) * zoom, -max_x_offset, max_x_offset);
+  float y_offset = std::clamp<float>((Kep.y() / Kep.z() - center_y) * zoom, -max_y_offset, max_y_offset);
 
   // Apply transformation such that video pixel coordinates match video
   // 1) Put (0, 0) in the middle of the video
   // 2) Apply same scaling as video
   // 3) Put (0, 0) in top left corner of video
-  s->car_space_transform.reset();
-  s->car_space_transform.translate(w / 2 - x_offset, h / 2 - y_offset)
-      .scale(zoom, zoom)
-      .translate(-intrinsic_matrix.v[2], -intrinsic_matrix.v[5]);
+  Eigen::Matrix3f video_transform =(Eigen::Matrix3f() <<
+    zoom, 0.0f, (w / 2 - x_offset) - (center_x * zoom),
+    0.0f, zoom, (h / 2 - y_offset) - (center_y * zoom),
+    0.0f, 0.0f, 1.0f).finished();
+
+  s->car_space_transform = video_transform * calib_transform;
+  s->clip_region = rect().adjusted(-500, -500, 500, 500);
+
+  float zx = zoom * 2 * center_x / w;
+  float zy = zoom * 2 * center_y / h;
+  return mat4{{
+    zx, 0.0, 0.0, -x_offset / w * 2,
+    0.0, zy, 0.0, y_offset / h * 2,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0,
+  }};
 }
 
 void AnnotatedCameraWidget::drawLaneLines(QPainter &painter, const UIState *s) {
@@ -123,7 +146,7 @@ void AnnotatedCameraWidget::drawLaneLines(QPainter &painter, const UIState *s) {
 
   // paint path
   QLinearGradient bg(0, height(), 0, 0);
-  if (sm["controlsState"].getControlsState().getExperimentalMode()) {
+  if (sm["selfdriveState"].getSelfdriveState().getExperimentalMode()) {
     // The first half of track_vertices are the points for the right side of the path
     const auto &acceleration = sm["modelV2"].getModelV2().getAcceleration().getX();
     const int max_len = std::min<int>(scene.track_vertices.length() / 2, acceleration.size());
@@ -155,6 +178,7 @@ void AnnotatedCameraWidget::drawLaneLines(QPainter &painter, const UIState *s) {
     bg.setColorAt(0.5, QColor::fromHslF(112 / 360., 1.0, 0.68, 0.35));
     bg.setColorAt(1.0, QColor::fromHslF(112 / 360., 1.0, 0.68, 0.0));
   }
+
   painter.setBrush(bg);
   painter.drawPolygon(scene.track_vertices);
 
@@ -216,9 +240,7 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
     } else if (v_ego > 15) {
       wide_cam_requested = false;
     }
-    wide_cam_requested = wide_cam_requested && sm["controlsState"].getControlsState().getExperimentalMode();
-    // for replay of old routes, never go to widecam
-    wide_cam_requested = wide_cam_requested && s->scene.calibration_wide_valid;
+    wide_cam_requested = wide_cam_requested && sm["selfdriveState"].getSelfdriveState().getExperimentalMode();
   }
 
   if(s->scene.show_driver_camera) {
@@ -228,14 +250,6 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
     CameraWidget::setStreamType(wide_cam_requested ? VISION_STREAM_WIDE_ROAD : VISION_STREAM_ROAD);
   }
 
-  s->scene.wide_cam = CameraWidget::getStreamType() == VISION_STREAM_WIDE_ROAD;
-  if (s->scene.calibration_valid) {
-    auto calib = s->scene.wide_cam ? s->scene.view_from_wide_calib : s->scene.view_from_calib;
-    CameraWidget::updateCalibration(calib);
-  } else {
-    CameraWidget::updateCalibration(DEFAULT_CALIBRATION);
-  }
-
   p.beginNativePainting();
   CameraWidget::setFrameId(model.getFrameId());
   CameraWidget::paintGL();
@@ -243,11 +257,7 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
 
   if (s->scene.world_objects_visible && !s->scene.show_driver_camera) {
     update_model(s, model);
-    // DMoji
-    if (!hideBottomIcons && (sm.rcv_frame("driverStateV2") > s->scene.started_frame)) {
-      update_dmonitoring(s, sm["driverStateV2"].getDriverStateV2(), dm_fade_state, false);
-      drawDriverState(p, s);
-    }
+    dmon.draw(p, rect());
   }
 
   if(!s->scene.show_driver_camera) {
@@ -976,7 +986,7 @@ void AnnotatedCameraWidget::drawDebugText(QPainter &p) {
   p.restore();*/
 }
 
-void AnnotatedCameraWidget::drawDriverState(QPainter &painter, const UIState *s) {
+/*void AnnotatedCameraWidget::drawDriverState(QPainter &painter, const UIState *s) {
   const UIScene &scene = s->scene;
 
   painter.save();
@@ -1015,7 +1025,7 @@ void AnnotatedCameraWidget::drawDriverState(QPainter &painter, const UIState *s)
   painter.drawArc(QRectF(x - arc_l / 2, std::fmin(y + delta_y, y), arc_l, fabs(delta_y)), (scene.driver_pose_sins[0]>0 ? 0 : 180) * 16, 180 * 16);
 
   painter.restore();
-}
+}*/
 
 static const QColor get_tpms_color(float tpms) {
     if(tpms < 5 || tpms > 60) // N/A

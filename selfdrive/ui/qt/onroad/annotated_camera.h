@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "selfdrive/ui/qt/onroad/buttons.h"
+#include "selfdrive/ui/qt/onroad/driver_monitoring.h"
 #include "selfdrive/ui/qt/widgets/cameraview.h"
 #include "selfdrive/ui/qt/screenrecorder/screenrecorder.h"
 
@@ -18,7 +19,7 @@ protected:
   void paintGL() override;
   void initializeGL() override;
   void showEvent(QShowEvent *event) override;
-  void updateFrameMat() override;
+  mat4 calcFrameMatrix() override;
   void drawLaneLines(QPainter &painter, const UIState *s);
   void drawLead(QPainter &painter, const cereal::RadarState::LeadData::Reader &lead_data, const QPointF &vd, bool is_radar);
   inline QColor redColor(int alpha = 255) { return QColor(201, 34, 49, alpha); }
@@ -27,6 +28,7 @@ protected:
 
   QVBoxLayout *main_layout;
   ExperimentalButton *experimental_btn;
+  DriverMonitorRenderer dmon;
   bool dmActive = false;
   bool hideBottomIcons = false;
   bool rightHandDM = false;
@@ -79,7 +81,6 @@ protected:
   void drawTurnSignals(QPainter &p);
   void drawGpsStatus(QPainter &p);
   void drawDebugText(QPainter &p);
-  void drawDriverState(QPainter &painter, const UIState *s);
   void drawMisc(QPainter &p);
   bool drawTrafficSignal(QPainter &p);
   void drawHud(QPainter &p, const cereal::ModelDataV2::Reader &model);
