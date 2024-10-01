@@ -30,7 +30,7 @@ TORQUE_PARAMS_PATH = os.path.join(BASEDIR, 'torque_data/params.toml')
 TORQUE_OVERRIDE_PATH = os.path.join(BASEDIR, 'torque_data/override.toml')
 TORQUE_SUBSTITUTE_PATH = os.path.join(BASEDIR, 'torque_data/substitute.toml')
 
-GEAR_SHIFTER_MAP: dict[str, GearShifter] = {
+GEAR_SHIFTER_MAP: dict[str, structs.CarState.GearShifter] = {
   'P': GearShifter.park, 'PARK': GearShifter.park,
   'R': GearShifter.reverse, 'REVERSE': GearShifter.reverse,
   'N': GearShifter.neutral, 'NEUTRAL': GearShifter.neutral,
@@ -196,7 +196,6 @@ class CarInterfaceBase(ABC):
     ret.stoppingDecelRate = 0.8 # brake_travel/s while trying to stop
     ret.vEgoStopping = 0.5
     ret.vEgoStarting = 0.5
-    ret.stoppingControl = True
     ret.longitudinalTuning.kf = 1.
     ret.longitudinalTuning.kpBP = [0.]
     ret.longitudinalTuning.kpV = [0.]
@@ -270,12 +269,11 @@ class RadarInterfaceBase(ABC):
     self.CP = CP
     self.rcp = None
     self.pts: dict[int, structs.RadarData.RadarPoint] = {}
-    self.radar_ts = CP.radarTimeStep
     self.frame = 0
 
-  def update(self, can_packets: list[tuple[int, list[CanData]]]) -> structs.RadarData | None:
+  def update(self, can_packets: list[tuple[int, list[CanData]]]) -> structs.RadarDataT | None:
     self.frame += 1
-    if (self.frame % int(100 * self.radar_ts)) == 0:
+    if (self.frame % 5) == 0:  # 20 Hz is very standard
       return structs.RadarData()
     return None
 
@@ -378,7 +376,7 @@ class CarStateBase(ABC):
     return bool(left_blinker_stalk or self.left_blinker_cnt > 0), bool(right_blinker_stalk or self.right_blinker_cnt > 0)
 
   @staticmethod
-  def parse_gear_shifter(gear: str | None) -> GearShifter:
+  def parse_gear_shifter(gear: str | None) -> structs.CarState.GearShifter:
     if gear is None:
       return GearShifter.unknown
     return GEAR_SHIFTER_MAP.get(gear.upper(), GearShifter.unknown)

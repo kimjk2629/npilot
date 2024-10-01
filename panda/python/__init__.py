@@ -187,6 +187,7 @@ class Panda:
   FLAG_TOYOTA_ALT_BRAKE = (1 << 8)
   FLAG_TOYOTA_STOCK_LONGITUDINAL = (2 << 8)
   FLAG_TOYOTA_LTA = (4 << 8)
+  FLAG_TOYOTA_SECOC = (8 << 8)
 
   FLAG_HONDA_ALT_BRAKE = 1
   FLAG_HONDA_BOSCH_LONG = 2
@@ -251,7 +252,6 @@ class Panda:
       return None
     if len(pandas) == 1:
       print(f"INFO: connecting to panda {pandas[0]}")
-      time.sleep(1)
       return pandas[0]
     while True:
       print("Multiple pandas available:")
@@ -515,22 +515,22 @@ class Panda:
     assert last_sector < 7, "Binary too large! Risk of overwriting provisioning chunk."
 
     # unlock flash
-    logger.warning("flash: unlocking")
+    logger.info("flash: unlocking")
     handle.controlWrite(Panda.REQUEST_IN, 0xb1, 0, 0, b'')
 
     # erase sectors
-    logger.warning(f"flash: erasing sectors 1 - {last_sector}")
+    logger.info(f"flash: erasing sectors 1 - {last_sector}")
     for i in range(1, last_sector + 1):
       handle.controlWrite(Panda.REQUEST_IN, 0xb2, i, 0, b'')
 
     # flash over EP2
     STEP = 0x10
-    logger.warning("flash: flashing")
+    logger.info("flash: flashing")
     for i in range(0, len(code), STEP):
       handle.bulkWrite(2, code[i:i + STEP])
 
     # reset
-    logger.warning("flash: resetting")
+    logger.info("flash: resetting")
     try:
       handle.controlWrite(Panda.REQUEST_IN, 0xd8, 0, 0, b'', expect_disconnect=True)
     except Exception:
@@ -538,7 +538,7 @@ class Panda:
 
   def flash(self, fn=None, code=None, reconnect=True):
     if self.up_to_date(fn=fn):
-      logger.debug("flash: already up to date")
+      logger.info("flash: already up to date")
       return
 
     if not fn:
@@ -830,18 +830,10 @@ class Panda:
   @ensure_can_packet_version
   def can_send_many(self, arr, timeout=CAN_SEND_TIMEOUT_MS):
     snds = pack_can_buffer(arr)
-    while True:
-      try:
-        for tx in snds:
-          while True:
-            bs = self._handle.bulkWrite(3, tx, timeout=timeout)
-            tx = tx[bs:]
-            if len(tx) == 0:
-              break
-            logger.error("CAN: PARTIAL SEND MANY, RETRYING")
-        break
-      except (usb1.USBErrorIO, usb1.USBErrorOverflow):
-        logger.error("CAN: BAD SEND MANY, RETRYING")
+    for tx in snds:
+      while len(tx) > 0:
+        bs = self._handle.bulkWrite(3, tx, timeout=timeout)
+        tx = tx[bs:]
 
   def can_send(self, addr, dat, bus, timeout=CAN_SEND_TIMEOUT_MS):
     self.can_send_many([[addr, dat, bus]], timeout=timeout)

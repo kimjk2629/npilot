@@ -13,7 +13,6 @@ from opendbc.car.interfaces import CarStateBase
 
 from openpilot.common.numpy_fast import interp
 from openpilot.common.conversions import Conversions as CV
-from opendbc.car.hyundai.interface import BUTTONS_DICT
 from openpilot.selfdrive.controls.neokii.cruise_state_manager import CruiseStateManager
 from opendbc.car.hyundai.values import HyundaiExFlags
 
