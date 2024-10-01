@@ -119,9 +119,8 @@ struct OnroadEvent @0x9b1657f34caf3ad3 {
     aeb @123;
 
     slowingDownSpeed @125;
-    slowingDownSpeedSound @126;
-    cruiseOn @127;
-    cruiseOff @128;
+    cruiseOn @126;
+    cruiseOff @127;
 
     radarCanErrorDEPRECATED @15;
     communityFeatureDisallowedDEPRECATED @62;
@@ -657,6 +656,7 @@ struct CarParams {
     volkswagenMqbEvo @29;
     chryslerCusw @30;
     psa @31;
+    fcaGiorgio @32;
   }
 
   enum SteerControlType {
@@ -751,7 +751,7 @@ struct CarParams {
   brakeMaxVDEPRECATED @16 :List(Float32);
   directAccelControlDEPRECATED @30 :Bool;
   maxSteeringAngleDegDEPRECATED @54 :Float32;
-  longitudinalActuatorDelayLowerBoundDEPRECATEDDEPRECATED @61 :Float32;
+  longitudinalActuatorDelayLowerBoundDEPRECATED @61 :Float32;
 
 
   sccBus @75: Int8;
