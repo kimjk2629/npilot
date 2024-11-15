@@ -69,7 +69,7 @@ class CarInterface(CarInterfaceBase):
         else:
           ret.flags |= HyundaiFlags.CANFD_ALT_GEARS.value
 
-    ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or DBC[ret.carFingerprint]["radar"] is None
+    ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or Bus.radar not in DBC[ret.carFingerprint]
     ret.steerActuatorDelay = 0.2  # Default delay
     ret.steerLimitTimer = 0.4
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)

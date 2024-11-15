@@ -207,8 +207,8 @@ node {
           step("build", "cd system/manager && ./build.py"),
           step("test pandad", "pytest selfdrive/pandad/tests/test_pandad.py", [diffPaths: ["panda", "selfdrive/pandad/"]]),
           step("test power draw", "pytest -s system/hardware/tici/tests/test_power_draw.py"),
-          step("test encoder", "LD_LIBRARY_PATH=/usr/local/lib pytest system/loggerd/tests/test_encoder.py"),
-          step("test pigeond", "pytest system/ubloxd/tests/test_pigeond.py"),
+          step("test encoder", "LD_LIBRARY_PATH=/usr/local/lib pytest system/loggerd/tests/test_encoder.py", [diffPaths: ["system/loggerd/"]]),
+          step("test pigeond", "pytest system/ubloxd/tests/test_pigeond.py", [diffPaths: ["system/ubloxd/"]]),
           step("test manager", "pytest system/manager/test/test_manager.py"),
         ])
       },
@@ -253,7 +253,7 @@ node {
           step("test pandad spi", "pytest selfdrive/pandad/tests/test_pandad_spi.py"),
           step("test pandad", "pytest selfdrive/pandad/tests/test_pandad.py", [diffPaths: ["panda", "selfdrive/pandad/"]]),
           step("test amp", "pytest system/hardware/tici/tests/test_amplifier.py"),
-          step("test qcomgpsd", "pytest system/qcomgpsd/tests/test_qcomgpsd.py"),
+          step("test qcomgpsd", "pytest system/qcomgpsd/tests/test_qcomgpsd.py", [diffPaths: ["system/qcomgpsd/"]]),
         ])
       },
 
