@@ -1,6 +1,6 @@
 [project]
 name = "openpilot"
-requires-python = ">= 3.11"
+requires-python = ">= 3.11, <= 3.12"
 license = {text = "MIT License"}
 version = "0.1.0"
 description = "an open source driver assistance system"
@@ -31,6 +31,9 @@ dependencies = [
   # body / webrtcd
   "aiohttp",
   "aiortc",
+  # aiortc does not put an upper bound on pyopenssl and is now incompatible
+  # with the latest release
+  "pyopenssl < 24.3.0",
   "pyaudio",
 
   # panda
@@ -98,7 +101,6 @@ dev = [
   "azure-identity",
   "azure-storage-blob",
   "dictdiffer",
-  "flaky",
   "lru-dict",
   "matplotlib",
   "parameterized >=0.8, <0.9",
@@ -148,14 +150,7 @@ markers = [
 ]
 testpaths = [
   "common",
-  "selfdrive/pandad",
-  "selfdrive/car",
-  "selfdrive/opcar",
-  "selfdrive/controls",
-  "selfdrive/locationd",
-  "selfdrive/monitoring",
-  "selfdrive/test/longitudinal_maneuvers",
-  "selfdrive/test/process_replay/test_fuzzy.py",
+  "selfdrive",
   "system/updated",
   "system/athena",
   "system/camerad",
@@ -246,6 +241,7 @@ exclude = [
   "cereal",
   "panda",
   "opendbc",
+  "opendbc_repo",
   "rednose_repo",
   "tinygrad_repo",
   "teleoprtc",

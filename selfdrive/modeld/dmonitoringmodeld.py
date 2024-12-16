@@ -12,7 +12,6 @@ from cereal import messaging
 from cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
-from openpilot.common.params import Params
 from openpilot.common.realtime import set_realtime_priority
 from openpilot.selfdrive.modeld.runners import ModelRunner, Runtime
 from openpilot.selfdrive.modeld.models.commonmodel_pyx import CLContext
@@ -126,7 +125,6 @@ def main():
   cl_context = CLContext()
   model = ModelState(cl_context)
   cloudlog.warning("models loaded, dmonitoringmodeld starting")
-  Params().put_bool("DmModelInitialized", True)
 
   cloudlog.warning("connecting to driver stream")
   vipc_client = VisionIpcClient("camerad", VisionStreamType.VISION_STREAM_DRIVER, True, cl_context)
@@ -139,7 +137,6 @@ def main():
   pm = PubMaster(["driverStateV2"])
 
   calib = np.zeros(CALIB_LEN, dtype=np.float32)
-  # last = 0
 
   while True:
     buf = vipc_client.recv()
@@ -155,8 +152,6 @@ def main():
     t2 = time.perf_counter()
 
     pm.send("driverStateV2", get_driverstate_packet(model_output, vipc_client.frame_id, vipc_client.timestamp_sof, t2 - t1, gpu_execution_time))
-    # print("dmonitoring process: %.2fms, from last %.2fms\n" % (t2 - t1, t1 - last))
-    # last = t1
 
 
 if __name__ == "__main__":
