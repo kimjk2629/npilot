@@ -17,7 +17,7 @@ private:
                         QPolygonF *pvd, int max_idx, bool allow_invert = true);
   void drawLead(QPainter &painter, const cereal::RadarState::LeadData::Reader &lead_data, const QPointF &vd, const QRect &surface_rect, const bool is_radar);
   void update_leads(const cereal::RadarState::Reader &radar_state, const cereal::XYZTData::Reader &line);
-  void update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead);
+  void update_model(const cereal::ModelDataV2::Reader &model, const cereal::XYZTData::Reader &position, const cereal::RadarState::LeadData::Reader &lead);
   void drawLaneLines(QPainter &painter);
   void drawPath(QPainter &painter, const cereal::ModelDataV2::Reader &model, int height);
   void updatePathGradient(QLinearGradient &bg);

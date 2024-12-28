@@ -33,7 +33,13 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   const auto &radar_state = sm["radarState"].getRadarState();
   const auto &lead_one = radar_state.getLeadOne();
 
-  update_model(model, lead_one);
+  const auto &lateralPlan = sm["lateralPlan"].getLateralPlan();
+
+  if(lateralPlan.getUseLaneLines())
+    update_model(model, lateralPlan.getPosition(), lead_one);
+  else
+    update_model(model, model.getPosition(), lead_one);
+
   drawLaneLines(painter);
   drawPath(painter, model, surface_rect.height());
 
@@ -65,9 +71,8 @@ void ModelRenderer::update_leads(const cereal::RadarState::Reader &radar_state, 
   }
 }
 
-void ModelRenderer::update_model(const cereal::ModelDataV2::Reader &model, const cereal::RadarState::LeadData::Reader &lead) {
-  const auto &model_position = model.getPosition();
-  float max_distance = std::clamp(*(model_position.getX().end() - 1), MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
+void ModelRenderer::update_model(const cereal::ModelDataV2::Reader &model, const cereal::XYZTData::Reader &position, const cereal::RadarState::LeadData::Reader &lead) {
+  float max_distance = std::clamp(*(position.getX().end() - 1), MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
 
   // update lane lines
   const auto &lane_lines = model.getLaneLines();
@@ -91,8 +96,8 @@ void ModelRenderer::update_model(const cereal::ModelDataV2::Reader &model, const
     const float lead_d = lead.getDRel() * 2.;
     max_distance = std::clamp((float)(lead_d - fmin(lead_d * 0.35, 10.)), 0.0f, max_distance);
   }
-  max_idx = get_path_length_idx(model_position, max_distance);
-  mapLineToPolygon(model_position, 0.9, path_offset_z, &track_vertices, max_idx, false);
+  max_idx = get_path_length_idx(position, max_distance);
+  mapLineToPolygon(position, 0.9, path_offset_z, &track_vertices, max_idx, false);
 }
 
 void ModelRenderer::drawLaneLines(QPainter &painter) {

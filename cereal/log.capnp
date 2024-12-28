@@ -1320,6 +1320,9 @@ struct LateralPlan @0xe1e9318e2ae8b51e {
   solverCost @32 :Float32;
   solverState @33 :SolverState;
 
+  distances @34 :List(Float32);
+  position @35 :XYZTData;
+
   struct SolverState {
     x @0 :List(List(Float32));
     u @1 :List(Float32);
@@ -2623,7 +2626,7 @@ struct Event {
     pandaStateDEPRECATED @12 :PandaState;
     driverStateDEPRECATED @59 :DriverStateDEPRECATED;
     sensorEventsDEPRECATED @11 :List(SensorEventData);
-    lateralPlanDEPRECATED @64 :LateralPlan;
+    lateralPlan @64 :LateralPlan;
     navModelDEPRECATED @104 :NavModelData;
     uiPlanDEPRECATED @106 :UiPlan;
     liveLocationKalmanDEPRECATED @72 :LiveLocationKalman;

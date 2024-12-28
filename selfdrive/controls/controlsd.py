@@ -20,6 +20,7 @@ from openpilot.selfdrive.controls.lib.vehicle_model import VehicleModel
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.selfdrive.controls.ntune import ntune_common_enabled, ntune_common_get
+from selfdrive.controls.neokii.lane_planner import LanePlanner
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -39,7 +40,7 @@ class Controls:
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance',
-                                   'radarState',
+                                   'radarState', 'lateralPlan'
                                    ], poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'])
 
@@ -119,8 +120,14 @@ class Controls:
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, self.sm)
 
+    lat_plan = self.sm['lateralPlan']
+
     # Steering PID loop and lateral MPC
-    self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature)
+    if lat_plan.useLaneLines:
+      self.desired_curvature = LanePlanner.get_lag_adjusted_curvature(CS.vEgo, lat_plan.psis, lat_plan.curvatures, lat_plan.distances)
+    else:
+      self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature)
+
     actuators.curvature = self.desired_curvature
     actuators.steer, actuators.steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                                             self.steer_limited, self.desired_curvature,
