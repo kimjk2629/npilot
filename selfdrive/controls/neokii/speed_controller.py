@@ -10,7 +10,7 @@ import time
 import numpy as np
 
 from common.numpy_fast import clip, interp
-from cereal import car, messaging
+from cereal import car, messaging, log
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.can_definitions import CanData
 from opendbc.car.car_helpers import can_fingerprint
@@ -31,7 +31,7 @@ CREEP_SPEED = 2.3
 
 MIN_CURVE_SPEED = 32. * CV.KPH_TO_MS
 
-EventName = car.OnroadEvent.EventName
+EventName = log.OnroadEvent.EventName
 ButtonType = car.CarState.ButtonEvent.Type
 
 
@@ -84,8 +84,8 @@ class SpeedController:
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.v_cruise_kph_last = 0
 
-    if self.params.get_bool('SendCarParamLogs'):
-      threading.Thread(target=self._upload_log_thread, daemon=True).start()
+    #if self.params.get_bool('SendCarParamLogs'):
+    #  threading.Thread(target=self._upload_log_thread, daemon=True).start()
 
   def kph_to_clu(self, kph):
     return int(kph * CV.KPH_TO_MS * self.speed_conv_to_clu)
@@ -130,6 +130,13 @@ class SpeedController:
     self.slowing_down = False
     self.slowing_down_alert = False
     self.slowing_down_sound_alert = False
+
+  def should_play_slowing_down(self, CS):
+    if CS.cruiseState.enabled:
+      if self.slowing_down_sound_alert:
+        self.slowing_down_sound_alert = False
+        return True
+    return False
 
   def inject_events(self, CS, events):
 
@@ -224,9 +231,7 @@ class SpeedController:
         dy = np.gradient(y, x)
         d2y = np.gradient(dy, x)
         curv = d2y / (1 + dy ** 2) ** 1.5
-
-        start = int(interp(v_ego, [10., 27.], [10, TRAJECTORY_SIZE-10]))
-        curv = curv[start:min(start+10, TRAJECTORY_SIZE)]
+        curv = curv[-10:]
         a_y_max = 2.975 - v_ego * 0.0375  # ~1.85 @ 75mph, ~2.6 @ 25mph
         v_curvature = np.sqrt(a_y_max / np.clip(np.abs(curv), 1e-4, None))
         model_speed = np.mean(v_curvature) * 0.85
@@ -415,6 +420,7 @@ class SpeedController:
     exState.applyMaxSpeed = self.cruise_speed_kph
     exState.steerActuatorDelay = ntune_common_get('steerActuatorDelay')
     exState.longActuatorDelay = ntune_scc_get('longActuatorDelay')
+    exState.slowingDownAlert = self.should_play_slowing_down(CS)
 
   def bytes_to_str(self, obj):
     if isinstance(obj, bytes):

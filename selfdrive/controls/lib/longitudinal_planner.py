@@ -23,7 +23,7 @@ A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.5
-ACCEL_LIMIT_MARGIN = 0.05
+MIN_ALLOW_THROTTLE_SPEED = 2.5
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -51,23 +51,20 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
   return [a_target[0], min(a_target[1], a_x_allowed)]
 
 
-def get_accel_from_plan(CP, speeds, accels):
+def get_accel_from_plan(speeds, accels, action_t=DT_MDL, vEgoStopping=0.05):
   if len(speeds) == CONTROL_N:
-    v_target_now = interp(DT_MDL, CONTROL_N_T_IDX, speeds)
-    a_target_now = interp(DT_MDL, CONTROL_N_T_IDX, accels)
+    v_now = speeds[0]
+    a_now = accels[0]
 
-    longActuatorDelay = ntune_scc_get('longActuatorDelay')
-
-    v_target = interp(longActuatorDelay + DT_MDL, CONTROL_N_T_IDX, speeds)
-    a_target = 2 * (v_target - v_target_now) / longActuatorDelay - a_target_now
-
-    v_target_1sec = interp(longActuatorDelay + DT_MDL + 1.0, CONTROL_N_T_IDX, speeds)
+    v_target = interp(action_t, CONTROL_N_T_IDX, speeds)
+    a_target = 2 * (v_target - v_now) / (action_t) - a_now
+    v_target_1sec = interp(action_t + 1.0, CONTROL_N_T_IDX, speeds)
   else:
     v_target = 0.0
     v_target_1sec = 0.0
     a_target = 0.0
-  should_stop = (v_target < CP.vEgoStopping and
-                 v_target_1sec < CP.vEgoStopping)
+  should_stop = (v_target < vEgoStopping and
+                 v_target_1sec < vEgoStopping)
   return v_target, a_target, should_stop
 
 
@@ -141,7 +138,8 @@ class LongitudinalPlanner:
 
     if self.mpc.mode == 'acc':
       accel_limits = [A_CRUISE_MIN, get_max_accel(v_ego)]
-      accel_limits_turns = limit_accel_in_turns(v_ego, sm['carState'].steeringAngleDeg, accel_limits, self.CP)
+      steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
+      accel_limits_turns = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_limits, self.CP)
     else:
       accel_limits = [ACCEL_MIN, ACCEL_MAX]
       accel_limits_turns = [ACCEL_MIN, ACCEL_MAX]
@@ -156,12 +154,13 @@ class LongitudinalPlanner:
     # Compute model v_ego error
     self.v_model_error = get_speed_error(sm['modelV2'], v_ego)
     x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'], self.v_model_error)
-    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD
+    # Don't clip at low speeds since throttle_prob doesn't account for creep
+    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
-    if not self.allow_throttle and v_ego > 5.0:  # Don't clip at low speeds since throttle_prob doesn't account for creep
-      # MPC breaks when accel limits would cause negative velocity within the MPC horizon, so we clip the max accel limit at vEgo/T_MAX plus a bit of margin
-      clipped_accel_coast = max(accel_coast, accel_limits_turns[0], -v_ego / T_IDXS_MPC[-1] + ACCEL_LIMIT_MARGIN)
-      accel_limits_turns[1] = min(accel_limits_turns[1], clipped_accel_coast)
+    if not self.allow_throttle:
+      clipped_accel_coast = max(accel_coast, accel_limits_turns[0])
+      clipped_accel_coast_interp = interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [accel_limits_turns[1], clipped_accel_coast])
+      accel_limits_turns[1] = min(accel_limits_turns[1], clipped_accel_coast_interp)
 
     if force_slow_decel:
       v_cruise = 0.0
@@ -206,7 +205,9 @@ class LongitudinalPlanner:
     longitudinalPlan.longitudinalPlanSource = self.mpc.source
     longitudinalPlan.fcw = self.fcw
 
-    v_target, a_target, should_stop = get_accel_from_plan(self.CP, longitudinalPlan.speeds, longitudinalPlan.accels)
+    action_t =  ntune_scc_get('longActuatorDelay') + DT_MDL
+    v_target, a_target, should_stop = get_accel_from_plan(longitudinalPlan.speeds, longitudinalPlan.accels,
+                                                action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
     longitudinalPlan.vTarget = v_target
     longitudinalPlan.aTarget = a_target
     longitudinalPlan.shouldStop = should_stop

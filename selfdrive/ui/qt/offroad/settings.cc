@@ -10,12 +10,13 @@
 
 #include "common/watchdog.h"
 #include "common/util.h"
+#include "selfdrive/ui/qt/offroad/driverview.h"
 #include "selfdrive/ui/qt/network/networking.h"
 #include "selfdrive/ui/qt/offroad/settings.h"
 #include "selfdrive/ui/qt/qt_window.h"
 #include "selfdrive/ui/qt/widgets/prime.h"
 #include "selfdrive/ui/qt/widgets/scrollview.h"
-#include "selfdrive/ui/qt/widgets/ssh_keys.h"
+#include "selfdrive/ui/qt/offroad/developer_panel.h"
 #include "selfdrive/ui/qt/widgets/toggle.h"
 #include "selfdrive/ui/ui.h"
 #include "selfdrive/ui/qt/util.h"
@@ -248,7 +249,12 @@ DevicePanel::DevicePanel(SettingsWindow *parent) : ListWidget(parent) {
 
   auto dcamBtn = new ButtonControl(tr("Driver Camera"), tr("PREVIEW"),
                                    tr("Preview the driver facing camera to ensure that driver monitoring has good visibility. (vehicle must be off)"));
-  connect(dcamBtn, &ButtonControl::clicked, [=]() { emit showDriverView(); });
+  connect(dcamBtn, &ButtonControl::clicked, [this, dcamBtn]() {
+    dcamBtn->setEnabled(false);
+    DriverViewDialog driver_view(this);
+    driver_view.exec();
+    dcamBtn->setEnabled(true);
+  });
   addItem(dcamBtn);
 
   auto resetCalibBtn = new ButtonControl(tr("Reset Calibration"), tr("RESET"), "");
@@ -449,7 +455,6 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QFrame(parent) {
   // setup panels
   DevicePanel *device = new DevicePanel(this);
   QObject::connect(device, &DevicePanel::reviewTrainingGuide, this, &SettingsWindow::reviewTrainingGuide);
-  QObject::connect(device, &DevicePanel::showDriverView, this, &SettingsWindow::showDriverView);
   QObject::connect(device, &DevicePanel::closeSettings, this, &SettingsWindow::closeSettings);
 
   TogglesPanel *toggles = new TogglesPanel(this);
@@ -463,6 +468,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QFrame(parent) {
     {tr("Network"), networking},
     {tr("Toggles"), toggles},
     {tr("Software"), new SoftwarePanel(this)},
+    {tr("Developer"), new DeveloperPanel(this)},
     {tr("Community"), new CommunityPanel(this)},
   };
 
@@ -576,6 +582,12 @@ CommunityPanel::CommunityPanel(SettingsWindow *parent) : ListWidget(parent) {
   // param, title, desc, icon
   std::vector<std::tuple<QString, QString, QString, QString>> toggle_defs {
     {
+      "UseLanelines",
+      tr("Use lane lines instead of e2e"),
+      "",
+      "../assets/offroad/icon_openpilot.png",
+    },
+    {
       "SccOnBus2",
       tr("SCC on BUS 2"),
       tr("If SCC is on bus 2, turn it on."),
@@ -625,12 +637,12 @@ CommunityPanel::CommunityPanel(SettingsWindow *parent) : ListWidget(parent) {
       tr("Displays the driver camera when in reverse."),
       "../assets/img_driver_face_static.png",
     },
-    {
+    /*{
       "SendCarParamLogs",
       tr("Send car param logs (for debugging)"),
       tr(""),
       "../assets/icon_openpilot.png",
-    },
+    },*/
   };
 
   for (auto &[param, title, desc, icon] : toggle_defs) {

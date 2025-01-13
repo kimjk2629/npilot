@@ -1,7 +1,7 @@
 
 import copy
 from opendbc.can.packer import CANPacker
-from opendbc.car import DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs
+from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.common.numpy_fast import clip
 from opendbc.car.hyundai import hyundaicanfd, hyundaican, hyundaican_community
@@ -49,11 +49,11 @@ def process_hud_alert(enabled, fingerprint, hud_control):
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_name, CP):
-    super().__init__(dbc_name, CP)
+  def __init__(self, dbc_names, CP):
+    super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
-    self.packer = CANPacker(dbc_name)
+    self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
 
     self.accel_last = 0
@@ -101,7 +101,7 @@ class CarController(CarControllerBase):
     # *** common hyundai stuff ***
 
     # tester present - w/ no response (keeps relevant ECU disabled)
-    if self.frame % 100 == 0 and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value) and is_radar_disabler(self.CP):
+    if self.frame % 100 == 0 and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC) and is_radar_disabler(self.CP):
       # for longitudinal control, either radar or ADAS driving ECU
       addr, bus = 0x7d0, 0
       if self.CP.flags & HyundaiFlags.CANFD_HDA2.value:
@@ -199,7 +199,7 @@ class CarController(CarControllerBase):
           use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, jerk, int(self.frame / 2),
                                                         hud_control, set_speed_in_units, stopping,
-                                                          CC.cruiseControl.override, use_fca, CS, stock_cam))
+                                                          CC.cruiseControl.override, use_fca, self.CP, CS, stock_cam))
         else:
           can_sends.extend(hyundaican_community.create_acc_commands(self.packer, CC.enabled, accel, jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
@@ -214,7 +214,7 @@ class CarController(CarControllerBase):
       # 5 Hz ACC options
       if self.frame % 20 == 0 and self.CP.openpilotLongitudinalControl:
         if self.CP.sccBus == 0:
-          can_sends.extend(hyundaican.create_acc_opt(self.packer, self.CP.flags & HyundaiFlags.USE_FCA.value))
+          can_sends.extend(hyundaican.create_acc_opt(self.packer, self.CP))
         elif CS.scc13 is not None:
           can_sends.append(hyundaican_community.create_acc_opt(self.packer, CS))
 
@@ -222,7 +222,7 @@ class CarController(CarControllerBase):
       if self.frame % 50 == 0 and self.CP.openpilotLongitudinalControl and self.CP.sccBus == 0:
         can_sends.append(hyundaican.create_frt_radar_opt(self.packer))
 
-    new_actuators = copy.copy(actuators)
+    new_actuators = actuators.as_builder()
     new_actuators.steer = apply_steer / self.params.STEER_MAX
     new_actuators.steerOutputCan = apply_steer
     new_actuators.accel = accel
