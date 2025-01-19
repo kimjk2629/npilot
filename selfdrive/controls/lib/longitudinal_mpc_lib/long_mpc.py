@@ -4,7 +4,6 @@ import time
 import numpy as np
 from cereal import log
 from opendbc.car.interfaces import ACCEL_MIN
-from openpilot.common.numpy_fast import clip, interp
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.ntune import ntune_scc_get
@@ -337,9 +336,9 @@ class LongitudinalMpc:
     # MPC will not converge if immediate crash is expected
     # Clip lead distance to what is still possible to brake for
     min_x_lead = ((v_ego + v_lead)/2) * (v_ego - v_lead) / (-ACCEL_MIN * 2)
-    x_lead = clip(x_lead, min_x_lead, 1e8)
-    v_lead = clip(v_lead, 0.0, 1e8)
-    a_lead = clip(a_lead, -10., 5.)
+    x_lead = np.clip(x_lead, min_x_lead, 1e8)
+    v_lead = np.clip(v_lead, 0.0, 1e8)
+    a_lead = np.clip(a_lead, -10., 5.)
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
@@ -359,8 +358,8 @@ class LongitudinalMpc:
 
     # neokii
     leadDistanceBars = carstate.cruiseState.leadDistanceBars
-    cruise_gap = int(clip(leadDistanceBars, 1., 4.)) if leadDistanceBars > 0 else 4
-    self.t_follow = interp(float(cruise_gap), CRUISE_GAP_BP, CRUISE_GAP_V)
+    cruise_gap = int(np.clip(leadDistanceBars, 1., 4.)) if leadDistanceBars > 0 else 4
+    self.t_follow = np.interp(float(cruise_gap), CRUISE_GAP_BP, CRUISE_GAP_V)
     stop_distance = ntune_scc_get('stopDistance')
     comfort_brake = ntune_scc_get('comportBrake')
     self.params[:,6] = stop_distance
@@ -380,7 +379,7 @@ class LongitudinalMpc:
     if self.mode == 'acc':
 
       if radarstate.leadOne.status:
-        lead_danger_factor = interp(radarstate.leadOne.dRel, [STOP_DISTANCE, 10.], [0.85, LEAD_DANGER_FACTOR])
+        lead_danger_factor = np.interp(radarstate.leadOne.dRel, [STOP_DISTANCE, 10.], [0.85, LEAD_DANGER_FACTOR])
       else:
         lead_danger_factor = LEAD_DANGER_FACTOR
 

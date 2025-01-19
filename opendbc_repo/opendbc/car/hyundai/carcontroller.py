@@ -1,9 +1,7 @@
-
-import copy
+import numpy as np
 from opendbc.can.packer import CANPacker
 from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.common.numpy_fast import clip
 from opendbc.car.hyundai import hyundaicanfd, hyundaican, hyundaican_community
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CANFD_CAR, CAR, CAN_GEARS
@@ -88,7 +86,7 @@ class CarController(CarControllerBase):
     self.apply_steer_last = apply_steer
 
     # accel + longitudinal
-    accel = clip(actuators.accel, ACCEL_MIN, ACCEL_MAX)
+    accel = float(np.clip(actuators.accel, ACCEL_MIN, ACCEL_MAX))
     stopping = actuators.longControlState == LongCtrlState.stopping
     set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
 
@@ -225,7 +223,7 @@ class CarController(CarControllerBase):
     new_actuators = actuators.as_builder()
     new_actuators.steer = apply_steer / self.params.STEER_MAX
     new_actuators.steerOutputCan = apply_steer
-    new_actuators.accel = accel
+    new_actuators.accel = float(accel)
 
     self.frame += 1
     return new_actuators, can_sends
@@ -236,7 +234,7 @@ class CarController(CarControllerBase):
       self.stock_accel_weight += DT_CTRL / 3.
     else:
       self.stock_accel_weight -= DT_CTRL / 3.
-    self.stock_accel_weight = clip(self.stock_accel_weight, 0., 1.)
+    self.stock_accel_weight = np.clip(self.stock_accel_weight, 0., 1.)
     accel = stock_accel * self.stock_accel_weight + apply_accel * (1. - self.stock_accel_weight)
     return min(accel, apply_accel), stock_cam
 
