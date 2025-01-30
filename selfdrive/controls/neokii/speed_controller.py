@@ -449,7 +449,7 @@ class SpeedController:
       car_param = self.params.get("CarParamsPersistent")
       if car_param is not None:
         with car.CarParams.from_bytes(car_param) as car_param:
-          if car_param.carName != "mock":
+          if car_param.brand != "mock":
             car_params_dict = car_param.to_dict()
             dongle_id = self.params.get("DongleId").decode('utf-8')
             hashed_dongle_id = hashlib.sha256(dongle_id.encode('utf-8')).hexdigest()
