@@ -258,6 +258,10 @@ int SpectraCamera::clear_req_queue() {
   req_mgr_flush_request.flush_type = CAM_REQ_MGR_FLUSH_TYPE_ALL;
   int ret = do_cam_control(m->video0_fd, CAM_REQ_MGR_FLUSH_REQ, &req_mgr_flush_request, sizeof(req_mgr_flush_request));
   // LOGD("flushed all req: %d", ret);
+
+  for (int i = 0; i < MAX_IFE_BUFS; ++i) {
+    destroySyncObjectAt(i);
+  }
   return ret;
 }
 
@@ -507,9 +511,9 @@ void SpectraCamera::config_ife(int idx, int request_id, bool init) {
     // stream of IFE register writes
     if (!is_raw) {
       if (init) {
-        buf_desc[0].length = build_initial_config((unsigned char*)ife_cmd.ptr + buf_desc[0].offset, sensor.get(), patches);
+        buf_desc[0].length = build_initial_config((unsigned char*)ife_cmd.ptr + buf_desc[0].offset, sensor.get(), patches, cc.camera_num);
       } else {
-        buf_desc[0].length = build_update((unsigned char*)ife_cmd.ptr + buf_desc[0].offset, sensor.get(), patches);
+        buf_desc[0].length = build_update((unsigned char*)ife_cmd.ptr + buf_desc[0].offset, sensor.get(), patches, cc.camera_num);
       }
     }
 
@@ -676,29 +680,20 @@ void SpectraCamera::enqueue_buffer(int i, bool dp) {
     // SOF has come in, wait until readout is complete
     struct cam_sync_wait sync_wait = {0};
     sync_wait.sync_obj = sync_objs[i];
+    // TODO: write a test to stress test w/ a low timeout and check camera frame ids match
     sync_wait.timeout_ms = 100;
     ret = do_sync_control(m->cam_sync_fd, CAM_SYNC_WAIT, &sync_wait, sizeof(sync_wait));
     if (ret != 0) {
-      // TODO: handle frame drop cleanly
-      // when this happens, it messes up future frames
+      clear_req_queue();
       LOGE("failed to wait for sync: %d %d", ret, sync_wait.sync_obj);
     }
     buf.frame_metadata[i].timestamp_end_of_isp = (uint64_t)nanos_since_boot();
     buf.frame_metadata[i].timestamp_eof = buf.frame_metadata[i].timestamp_sof + sensor->readout_time_ns;
-    if (dp) {
+    if (dp && ret == 0) {
       buf.queue(i);
     }
 
-    // destroy old output fence
-    for (auto so : {sync_objs, sync_objs_bps_out}) {
-      if (so[i] == 0) continue;
-      struct cam_sync_info sync_destroy = {0};
-      sync_destroy.sync_obj = so[i];
-      ret = do_sync_control(m->cam_sync_fd, CAM_SYNC_DESTROY, &sync_destroy, sizeof(sync_destroy));
-      if (ret != 0) {
-        LOGE("failed to destroy sync object: %d %d", ret, sync_destroy.sync_obj);
-      }
-    }
+    destroySyncObjectAt(i);
   }
 
   // create output fences
@@ -734,6 +729,23 @@ void SpectraCamera::enqueue_buffer(int i, bool dp) {
   // submit request to IFE and BPS
   config_ife(i, request_id);
   config_bps(i, request_id);
+}
+
+void SpectraCamera::destroySyncObjectAt(int index) {
+  auto destroy_sync_obj = [](int cam_sync_fd, int32_t &sync_obj) {
+    if (sync_obj == 0) return;
+
+    struct cam_sync_info sync_destroy = {.sync_obj = sync_obj};
+    int ret = do_sync_control(cam_sync_fd, CAM_SYNC_DESTROY, &sync_destroy, sizeof(sync_destroy));
+    if (ret != 0) {
+      LOGE("Failed to destroy sync object: %d, sync_obj: %d", ret, sync_destroy.sync_obj);
+    }
+
+    sync_obj = 0;  // Reset the sync object to 0
+  };
+
+  destroy_sync_obj(m->cam_sync_fd, sync_objs[index]);
+  destroy_sync_obj(m->cam_sync_fd, sync_objs_bps_out[index]);
 }
 
 void SpectraCamera::camera_map_bufs() {
@@ -879,20 +891,25 @@ void SpectraCamera::configISP() {
                CAM_MEM_FLAG_HW_READ_WRITE | CAM_MEM_FLAG_KMD_ACCESS | CAM_MEM_FLAG_UMD_ACCESS | CAM_MEM_FLAG_CMD_BUF_TYPE,
                m->device_iommu, m->cdm_iommu, ife_buf_depth);
   if (!is_raw) {
-    ife_gamma_lut.init(m, 64*sizeof(uint32_t), 0x20,
+    assert(sensor->gamma_lut_rgb.size() == 64);
+    ife_gamma_lut.init(m, sensor->gamma_lut_rgb.size()*sizeof(uint32_t), 0x20,
                        CAM_MEM_FLAG_HW_READ_WRITE | CAM_MEM_FLAG_KMD_ACCESS | CAM_MEM_FLAG_UMD_ACCESS | CAM_MEM_FLAG_CMD_BUF_TYPE,
                        m->device_iommu, m->cdm_iommu, 3); // 3 for RGB
     for (int i = 0; i < 3; i++) {
       memcpy(ife_gamma_lut.ptr + ife_gamma_lut.size*i, sensor->gamma_lut_rgb.data(), ife_gamma_lut.size);
     }
-    ife_linearization_lut.init(m, sensor->linearization_lut.size(), 0x20,
+    assert(sensor->linearization_lut.size() == 36);
+    ife_linearization_lut.init(m, sensor->linearization_lut.size()*sizeof(uint32_t), 0x20,
                                CAM_MEM_FLAG_HW_READ_WRITE | CAM_MEM_FLAG_KMD_ACCESS | CAM_MEM_FLAG_UMD_ACCESS | CAM_MEM_FLAG_CMD_BUF_TYPE,
                                m->device_iommu, m->cdm_iommu);
     memcpy(ife_linearization_lut.ptr, sensor->linearization_lut.data(), ife_linearization_lut.size);
-    ife_vignetting_lut.init(m, sensor->vignetting_lut.size(), 0x20,
+    assert(sensor->vignetting_lut.size() == 221);
+    ife_vignetting_lut.init(m, sensor->vignetting_lut.size()*sizeof(uint32_t), 0x20,
                             CAM_MEM_FLAG_HW_READ_WRITE | CAM_MEM_FLAG_KMD_ACCESS | CAM_MEM_FLAG_UMD_ACCESS | CAM_MEM_FLAG_CMD_BUF_TYPE,
                             m->device_iommu, m->cdm_iommu, 2);
-    memcpy(ife_vignetting_lut.ptr, sensor->vignetting_lut.data(), ife_vignetting_lut.size*2);
+    for (int i = 0; i < 2; i++) {
+      memcpy(ife_vignetting_lut.ptr + ife_vignetting_lut.size*i, sensor->vignetting_lut.data(), ife_vignetting_lut.size);
+    }
   }
 
   config_ife(0, 1, true);
